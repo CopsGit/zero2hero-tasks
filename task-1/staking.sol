@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.7;
+pragma solidity ^0.8.0;
 
-import "@openzeppelin-solidity/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 contract Staking {
+    using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
     // 质押奖励的发放速率
@@ -45,19 +48,25 @@ contract Staking {
 
     address private owner;
 
-    constructor() {
-        owner = msg.sender;
-    }
 
-    modifier onlyOwner {
-        require(msg.sender == owner, "Only the contract owner can call this function.");
+
+    modifier onlyOwner() {
+        require(
+            msg.sender == owner,
+            "Only the contract owner can call this function."
+        );
         _;
     }
 
     IERC20 public stakingToken;
 
-    constructor(address _stakingToken) {
-        stakingToken = ERC20(_stakingToken);
+    IERC20 public rewardToken;
+
+    constructor(address _stakingToken, address _rewardToken, uint256 _duration) {
+        owner = msg.sender;
+        stakingToken = IERC20(_stakingToken);
+        rewardToken = IERC20(_rewardToken);
+        periodFinish = block.timestamp + _duration;
     }
 
     // 更新奖励相关参数
@@ -78,6 +87,8 @@ contract Staking {
         }
     }
 
+    event Staked(address indexed user, uint256 amount);
+
     function stake(uint256 amount) external nonReentrant notPaused {
         require(amount > 0, "Cannot stake 0");
         // 转移代币
@@ -89,6 +100,8 @@ contract Staking {
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         emit Staked(msg.sender, amount);
     }
+
+    event Withdrawn(address indexed user, uint256 amount);
 
     function withdraw(uint256 amount) public nonReentrant {
         require(amount > 0, "Cannot withdraw 0");
@@ -109,12 +122,19 @@ contract Staking {
             return rewardPerTokenStored;
         }
         // 计算累加值，上一个累加值加上最近一个区间的单位数量可获得的奖励数量
-        return rewardPerTokenStored.add(
-            lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRate).mul(1e18).div(_totalSupply)
+        return
+        rewardPerTokenStored.add(
+            lastTimeRewardApplicable()
+            .sub(lastUpdateTime)
+            .mul(rewardRate)
+            .mul(1e18)
+            .div(_totalSupply)
         );
     }
 
-    // 获取当前有效时间，如果活动结束了，就用结束时间，否则就用当前时间
+    uint256 public periodFinish;
+
+
     function lastTimeRewardApplicable() public view returns (uint256) {
         return block.timestamp < periodFinish ? block.timestamp : periodFinish;
     }
@@ -123,7 +143,11 @@ contract Staking {
     // 质押数量 * （当前累加值 - 用户上次操作时的累加值）+ 上次更新的奖励数量
     function earned(address account) public view returns (uint256) {
         require(account != address(0), "Invalid account address");
-        return _balances[account].mul(rewardPerToken().sub(userRewardPerTokenPaid[account])).add(rewards[account]).div(1e18);
+        return
+        _balances[account]
+        .mul(rewardPerToken().sub(userRewardPerTokenPaid[account]))
+        .add(rewards[account])
+        .div(1e18);
     }
 
     modifier updateReward(address account) {
@@ -131,6 +155,8 @@ contract Staking {
         updateRewardParams(account);
         _;
     }
+
+    event RewardRateUpdated(uint256 newRate);
 
     // 允许管理员更新奖励速率
     function setRewardRate(uint256 rate) external onlyOwner {
@@ -149,6 +175,8 @@ contract Staking {
             emit RewardPaid(msg.sender, reward);
         }
     }
+
+    event RewardPaid(address indexed user, uint256 reward);
 
     // 允许用户提取所有代币和奖励
     function exit() external {
