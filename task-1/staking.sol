@@ -30,8 +30,25 @@ contract Staking {
     // 用户的余额
     mapping(address => uint256) private _balances;
 
+    // 防止重入
     bool private locked;
 
+    // 暂停合约
+    bool private paused;
+
+    // 合约所有者
+    address private owner;
+
+    // 合约中使用的ERC20代币
+    IERC20 public stakingToken;
+
+    // 合约中使用的ERC20代币
+    IERC20 public rewardToken;
+
+    // 质押事件
+    uint256 public periodFinish;
+
+    // 防止重入
     modifier nonReentrant() {
         require(!locked, "Reentrant call");
         locked = true;
@@ -39,17 +56,13 @@ contract Staking {
         locked = false;
     }
 
-    bool private paused;
-
+    // 暂停合约
     modifier notPaused() {
         require(!paused, "Contract is paused");
         _;
     }
 
-    address private owner;
-
-
-
+    // 合约所有者
     modifier onlyOwner() {
         require(
             msg.sender == owner,
@@ -58,9 +71,12 @@ contract Staking {
         _;
     }
 
-    IERC20 public stakingToken;
-
-    IERC20 public rewardToken;
+    // 更新奖励参数
+    modifier updateReward(address account) {
+        // 更新奖励参数
+        updateRewardParams(account);
+        _;
+    }
 
     constructor(address _stakingToken, address _rewardToken, uint256 _duration) {
         owner = msg.sender;
@@ -87,8 +103,6 @@ contract Staking {
         }
     }
 
-    event Staked(address indexed user, uint256 amount);
-
     function stake(uint256 amount) external nonReentrant notPaused {
         require(amount > 0, "Cannot stake 0");
         // 转移代币
@@ -100,8 +114,6 @@ contract Staking {
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         emit Staked(msg.sender, amount);
     }
-
-    event Withdrawn(address indexed user, uint256 amount);
 
     function withdraw(uint256 amount) public nonReentrant {
         require(amount > 0, "Cannot withdraw 0");
@@ -132,9 +144,6 @@ contract Staking {
         );
     }
 
-    uint256 public periodFinish;
-
-
     function lastTimeRewardApplicable() public view returns (uint256) {
         return block.timestamp < periodFinish ? block.timestamp : periodFinish;
     }
@@ -149,14 +158,6 @@ contract Staking {
         .add(rewards[account])
         .div(1e18);
     }
-
-    modifier updateReward(address account) {
-        // 更新奖励参数
-        updateRewardParams(account);
-        _;
-    }
-
-    event RewardRateUpdated(uint256 newRate);
 
     // 允许管理员更新奖励速率
     function setRewardRate(uint256 rate) external onlyOwner {
@@ -176,11 +177,14 @@ contract Staking {
         }
     }
 
-    event RewardPaid(address indexed user, uint256 reward);
-
     // 允许用户提取所有代币和奖励
     function exit() external {
         withdraw(_balances[msg.sender]);
         getReward();
     }
+
+    event Staked(address indexed user, uint256 amount);
+    event RewardPaid(address indexed user, uint256 reward);
+    event RewardRateUpdated(uint256 newRate);
+    event Withdrawn(address indexed user, uint256 amount);
 }
