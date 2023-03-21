@@ -1,4 +1,11 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.7;
+
+import "@openzeppelin-solidity/contracts/token/ERC20/SafeERC20.sol";
+
 contract Staking {
+    using SafeERC20 for IERC20;
+
     // 质押奖励的发放速率
     uint256 private rewardRate = 0;
 
@@ -19,6 +26,39 @@ contract Staking {
 
     // 用户的余额
     mapping(address => uint256) private _balances;
+
+    bool private locked;
+
+    modifier nonReentrant() {
+        require(!locked, "Reentrant call");
+        locked = true;
+        _;
+        locked = false;
+    }
+
+    bool private paused;
+
+    modifier notPaused() {
+        require(!paused, "Contract is paused");
+        _;
+    }
+
+    address private owner;
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner {
+        require(msg.sender == owner, "Only the contract owner can call this function.");
+        _;
+    }
+
+    IERC20 public stakingToken;
+
+    constructor(address _stakingToken) {
+        stakingToken = ERC20(_stakingToken);
+    }
 
     // 更新奖励相关参数
     function updateRewardParams(address account) internal {
